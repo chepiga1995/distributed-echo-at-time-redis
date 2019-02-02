@@ -7,7 +7,6 @@ const log = require('logger');
 const { APP_VERSION } = require('variables');
 const router = require('./routers');
 const bodyParser = require('body-parser');
-const cookieParser = require('cookie-parser');
 const { HttpError } = require('errors');
 const cronTasks = require('services/cron');
 const responses = require('./responses');
@@ -37,7 +36,6 @@ app.use((req, res, next) => {
 // Parsers
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json({ extended: true, limit: 1024 * 1024 }));
-app.use(cookieParser());
 
 
 // Routers
@@ -69,7 +67,7 @@ server.listen(config.get('port'), () => {
     process.on('SIGTERM', termination('SIGTERM'));
     process.on('SIGINT', termination('SIGINT'));
     if(config.util.getEnv('NODE_ENV') !== 'test') {
-        _.each(cronTasks, task => task());
+        _.each(cronTasks, task => task.start());
     }
 });
 

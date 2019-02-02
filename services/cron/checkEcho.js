@@ -1,5 +1,5 @@
 const log = require('logger');
 
-module.exports = function start() {
+module.exports.start = function start() {
     log.info('tick');
 };
