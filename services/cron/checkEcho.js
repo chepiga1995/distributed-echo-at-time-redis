@@ -23,14 +23,23 @@ async function collectTasks(processAmount = 0) {
         return processAmount;
     }
     const now = new Date();
-    const messages = await redis
-        .getMessageFromSortedSet(ECHO_SORTED_SET_REDIS_KEY, now.valueOf(), ECHO_CHUNK_SIZE);
+    let messages = [];
+    let fullSizeReturn = false;
+    for (let i = 0; i < global.ACTIVE_THREADS.length; i += 1) {
+        const thread = global.ACTIVE_THREADS[i];
+        const threadMessages = await redis
+            .getMessageFromSortedSet(`${ECHO_SORTED_SET_REDIS_KEY}:${thread}`, now.valueOf(), ECHO_CHUNK_SIZE);
+        if(threadMessages.length === ECHO_CHUNK_SIZE) {
+            fullSizeReturn = true;
+        }
+        messages = [...messages, ...threadMessages];
+    }
     if(_.isEmpty(messages)) {
         return processAmount;
     }
     processAmount += messages.length;
     logEcho(messages, now);
-    if(messages.length < ECHO_CHUNK_SIZE) {
+    if(!fullSizeReturn) {
         return processAmount;
     }
     return promiseImmediate(collectTasks, processAmount);

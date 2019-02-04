@@ -1,5 +1,5 @@
 const uuid = require('uuid');
-const { ValidationError } = require('errors');
+const { HttpError } = require('errors');
 const { MAX_ECHO_RESPONSE_TIME } = require('variables');
 
 if(!global.ECHO_SAVE_QUEUE) {
@@ -17,7 +17,7 @@ module.exports.echoAtTime = async function (echoData) {
             onTimeout() {
                 if(queueObj.is_sending !== true) {
                     queueObj.is_timeout = true;
-                    reject(new ValidationError.General('FAILED_TO_SAVE_ECHO_TO_REDIS'));
+                    reject(new HttpError.ServerError('FAILED_TO_SAVE_ECHO_TO_REDIS'));
                 }
             },
             onSend() {
@@ -26,7 +26,7 @@ module.exports.echoAtTime = async function (echoData) {
             },
             onFailed() {
                 clearTimeout(queueObj.timeout);
-                reject(new ValidationError.General('FAILED_TO_SAVE_ECHO_TO_REDIS'));
+                reject(new HttpError.ServerError('FAILED_TO_SAVE_ECHO_TO_REDIS'));
             },
         };
         queueObj.timeout = setTimeout(queueObj.onTimeout, MAX_ECHO_RESPONSE_TIME);

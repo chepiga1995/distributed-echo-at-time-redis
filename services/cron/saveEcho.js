@@ -34,7 +34,8 @@ async function collectTasks(processAmount = 0) {
         scoreMessageArr.push(echo.score, echo.message);
     });
     try {
-        await redis.zadd(ECHO_SORTED_SET_REDIS_KEY, ...scoreMessageArr);
+        const thread = _.sample(global.ACTIVE_THREADS);
+        await redis.zadd(`${ECHO_SORTED_SET_REDIS_KEY}:${thread}`, ...scoreMessageArr);
         _.each(echoToSave, echo => echo.onSend());
         processAmount += echoToSave.length;
     } catch (error) {

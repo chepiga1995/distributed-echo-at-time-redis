@@ -2,22 +2,55 @@ const config = require('config');
 const Redis = require('ioredis');
 
 
-const unitHealthCheckCommand = `
+const serverHealthCheckCommand = `
     local serverId = KEYS[1];
-    local unitName = KEYS[2]
-    local delay = KEYS[3]
-    redis.call('set', 'APP:HEALTH_CHECK:' .. unitName  .. ':SERVER:' .. serverId, 'TICK', 'PX', delay)
-    redis.call('sadd', 'APP:HEALTH_CHECK:' .. unitName  .. ':SERVERS', serverId)
+    local delay = KEYS[2]
+    redis.call('set', 'APP:HEALTH-CHECK:SERVER:' .. serverId, 'TICK', 'PX', delay)
+    redis.call('sadd', 'APP:HEALTH-CHECK:SERVERS', serverId)
 `;
 
-const getHealthUnitCommand = `
-    local unitName = KEYS[1]
-    for i, serverId in ipairs(redis.call('smembers', 'APP:HEALTH_CHECK:' .. unitName  .. ':SERVERS')) do
-        if not redis.call('get', 'APP:HEALTH_CHECK:' .. unitName  .. ':SERVER:' .. serverId) then
-            redis.call('srem', 'APP:HEALTH_CHECK:' .. unitName  .. ':SERVERS', serverId)
+const getHealthyServersAmountCommand = `
+    local delay = KEYS[1]
+    if redis.call('set', 'APP:HEALTH-CHECK:CHECK', 'TICK', 'NX', 'PX', delay * 4) then
+        for i, serverId in ipairs(redis.call('smembers', 'APP:HEALTH-CHECK:SERVERS')) do
+            if not redis.call('get', 'APP:HEALTH-CHECK:SERVER:' .. serverId) then
+                redis.call('srem', 'APP:HEALTH-CHECK:SERVERS', serverId)
+            end
         end
     end
-    return redis.call('scard', 'APP:HEALTH_CHECK:' .. unitName  .. ':SERVERS')
+    return redis.call('scard', 'APP:HEALTH-CHECK:SERVERS')
+`;
+
+// use separate redis server for scripts call
+const getThreadsWithLowestLoadCommand = `
+    local serverId = KEYS[1]
+    local threads = KEYS[2]
+    local delay = KEYS[3]
+    local reserveThreadsAmount = KEYS[4]
+    if redis.call('set', 'APP:ECHO-THREADS:CHECK', 'TICK', 'NX', 'PX', delay * 4) then
+        for i=1,threads do
+            for j, serverId in ipairs(redis.call('smembers', 'APP:ECHO-THREADS' .. i .. ':SERVERS')) do
+                if not redis.call('get', 'APP:HEALTH-CHECK:SERVER:' .. serverId) then
+                    redis.call('srem', 'APP:ECHO-THREADS' .. i .. ':SERVERS', serverId);
+                end
+            end
+        end
+    end
+    local threadsServersAmount = {};
+    for i=1,threads do
+        redis.call('srem', 'APP:ECHO-THREADS' .. i .. ':SERVERS', serverId);
+        local amount = redis.call('scard', 'APP:ECHO-THREADS' .. i .. ':SERVERS');
+        table.insert(threadsServersAmount, { amount = amount, thread = i });
+    end
+    table.sort(threadsServersAmount, function(a,b) return a.amount < b.amount end);
+    local reserveThreads = {};
+    for i=1,reserveThreadsAmount do
+        table.insert(reserveThreads, threadsServersAmount[i].thread);
+    end
+    for j, i in ipairs(reserveThreads) do
+        redis.call('sadd', 'APP:ECHO-THREADS' .. i .. ':SERVERS', serverId)
+    end
+    return reserveThreads
 `;
 
 const getMessageFromSortedSetCommand = `
@@ -31,23 +64,23 @@ const getMessageFromSortedSetCommand = `
     return messages
 `;
 //
-function unitHealthCheck(redis) {
-    redis.defineCommand('_unitHealthCheck', {
-        numberOfKeys: 3,
-        lua: unitHealthCheckCommand,
+function serverHealthCheck(redis) {
+    redis.defineCommand('_serverHealthCheck', {
+        numberOfKeys: 2,
+        lua: serverHealthCheckCommand,
     });
-    return (serverId, unitName, delay) => {
-        return redis._unitHealthCheck(serverId, unitName, delay);
+    return (serverId, delay) => {
+        return redis._serverHealthCheck(serverId, delay);
     };
 }
 
-function getHealthUnit(redis) {
-    redis.defineCommand('_getHealthUnit', {
+function getHealthyServersAmount(redis) {
+    redis.defineCommand('_getHealthyServersAmount', {
         numberOfKeys: 1,
-        lua: getHealthUnitCommand,
+        lua: getHealthyServersAmountCommand,
     });
-    return (unitName) => {
-        return redis._getHealthUnit(unitName);
+    return (delay) => {
+        return redis._getHealthyServersAmount(delay);
     };
 }
 
@@ -61,11 +94,22 @@ function getMessageFromSortedSet(redis) {
     };
 }
 
+function getThreadsWithLowestLoad(redis) {
+    redis.defineCommand('_getThreadsWithLowestLoad', {
+        numberOfKeys: 4,
+        lua: getThreadsWithLowestLoadCommand,
+    });
+    return (serverId, threads, delay, reserveThreadsAmount) => {
+        return redis._getThreadsWithLowestLoad(serverId, threads, delay, reserveThreadsAmount);
+    };
+}
+
 function getConnection() {
     const redis = new Redis(config.get('redis'));
-    redis.unitHealthCheck = unitHealthCheck(redis);
-    redis.getHealthUnit = getHealthUnit(redis);
+    redis.serverHealthCheck = serverHealthCheck(redis);
+    redis.getHealthyServersAmount = getHealthyServersAmount(redis);
     redis.getMessageFromSortedSet = getMessageFromSortedSet(redis);
+    redis.getThreadsWithLowestLoad = getThreadsWithLowestLoad(redis);
     return redis;
 }
 

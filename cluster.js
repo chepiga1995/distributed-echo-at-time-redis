@@ -4,7 +4,7 @@ const _ = require('lodash');
 const numCPUs = require('os').cpus().length;
 const log = require('logger');
 const uuid = require('uuid');
-const { SERVER_HEALTH_CHECK_UNIT_NAME, SERVER_HEALTH_CHECK_INTERVAL } = require('variables');
+const { SERVER_HEALTH_CHECK_INTERVAL } = require('variables');
 const redis = require('modules/Redis').getConnection();
 
 let activeProcesses = 0;
@@ -36,11 +36,8 @@ if(cluster.isMaster) {
         global.SERVER_ID = uuid.v1();
     }
     setInterval(() => {
-        redis.unitHealthCheck(
-            global.SERVER_ID,
-            SERVER_HEALTH_CHECK_UNIT_NAME,
-            SERVER_HEALTH_CHECK_INTERVAL,
-        );
+        redis
+            .serverHealthCheck(global.SERVER_ID, SERVER_HEALTH_CHECK_INTERVAL);
     }, SERVER_HEALTH_CHECK_INTERVAL);
     require('./app');
 }
