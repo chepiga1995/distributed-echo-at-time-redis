@@ -46,6 +46,6 @@ async function collectTasks(processAmount = 0) {
 }
 
 function logEcho(messages, now) {
-    _.each(messages, message => log.info(`${now.toISOString()}. Message:${message}`));
+    _.each(messages, message => log.info(`${now.toISOString()}. Message:${message.slice(36)}`));
 }
 
